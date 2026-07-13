@@ -1,5 +1,8 @@
 # Adversarial Agent Gym
 
+[![English](https://img.shields.io/badge/lang-English-2563eb)](README.md)
+[![Tiếng Việt](https://img.shields.io/badge/lang-Ti%E1%BA%BFng%20Vi%E1%BB%87t-dc2626)](README.vi.md)
+
 A small, reproducible security-evaluation gym for tool-using AI agents.
 
 This project tests whether an AI agent can safely complete a normal employee
