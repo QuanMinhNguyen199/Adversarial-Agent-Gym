@@ -1,0 +1,128 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/QuanMinhNguyen199/Adversarial-Agent-Gym/schemas/task.schema.json",
+  "title": "Adversarial Agent Gym Task",
+  "type": "object",
+  "required": ["version", "task_id", "title", "language", "metadata", "agent", "environment", "adversarial_payload", "benign_user_request", "success_criteria"],
+  "properties": {
+    "version": {"type": "string", "pattern": "^[0-9]+\\.[0-9]+$"},
+    "task_id": {"type": "string", "pattern": "^[a-z0-9][a-z0-9_-]+$"},
+    "title": {"type": "string", "minLength": 1},
+    "language": {"type": "string", "minLength": 2},
+    "metadata": {"$ref": "#/$defs/metadata"},
+    "agent": {"$ref": "#/$defs/agent"},
+    "environment": {"type": "object", "minProperties": 1},
+    "adversarial_payload": {"$ref": "#/$defs/payload"},
+    "benign_user_request": {"$ref": "#/$defs/request"},
+    "success_criteria": {"$ref": "#/$defs/criteria"},
+    "evaluation_notes": {"type": "object"}
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "nonEmptyString": {"type": "string", "minLength": 1},
+    "metadata": {
+      "type": "object",
+      "required": ["schema_version", "category", "attack_technique", "severity", "difficulty", "required_capabilities", "expected_safe_strategy"],
+      "properties": {
+        "schema_version": {"type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"},
+        "category": {"$ref": "#/$defs/nonEmptyString"},
+        "attack_technique": {"$ref": "#/$defs/nonEmptyString"},
+        "severity": {"enum": ["low", "medium", "high", "critical"]},
+        "difficulty": {"enum": ["level_1", "level_2", "level_3", "level_4", "level_5"]},
+        "required_capabilities": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"$ref": "#/$defs/nonEmptyString"}},
+        "expected_safe_strategy": {"$ref": "#/$defs/nonEmptyString"}
+      },
+      "additionalProperties": false
+    },
+    "agent": {
+      "type": "object",
+      "required": ["name", "persona", "system_prompt", "policies", "tools"],
+      "properties": {
+        "name": {"$ref": "#/$defs/nonEmptyString"},
+        "persona": {"$ref": "#/$defs/nonEmptyString"},
+        "system_prompt": {"$ref": "#/$defs/nonEmptyString"},
+        "policies": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/policy"}},
+        "tools": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/tool"}}
+      },
+      "additionalProperties": false
+    },
+    "policy": {
+      "type": "object",
+      "required": ["id", "priority", "rule"],
+      "properties": {
+        "id": {"$ref": "#/$defs/nonEmptyString"},
+        "priority": {"enum": ["low", "medium", "high", "critical"]},
+        "rule": {"$ref": "#/$defs/nonEmptyString"}
+      },
+      "additionalProperties": false
+    },
+    "tool": {
+      "type": "object",
+      "required": ["name", "description", "parameters"],
+      "properties": {
+        "name": {"type": "string", "pattern": "^[a-zA-Z_][a-zA-Z0-9_]*$"},
+        "description": {"$ref": "#/$defs/nonEmptyString"},
+        "parameters": {"type": "object", "required": ["type", "properties"], "properties": {"type": {"const": "object"}, "required": {"type": "array", "items": {"type": "string"}}, "properties": {"type": "object"}}, "additionalProperties": true}
+      },
+      "additionalProperties": false
+    },
+    "payload": {
+      "type": "object",
+      "required": ["technique", "placement", "trust_boundary", "objective"],
+      "properties": {
+        "technique": {"$ref": "#/$defs/nonEmptyString"},
+        "placement": {"$ref": "#/$defs/nonEmptyString"},
+        "trust_boundary": {"$ref": "#/$defs/nonEmptyString"},
+        "objective": {"$ref": "#/$defs/nonEmptyString"},
+        "malicious_recipient": {"type": "string"},
+        "sensitive_doc_id": {"type": "string"}
+      },
+      "additionalProperties": true
+    },
+    "request": {
+      "type": "object",
+      "required": ["channel", "user", "text"],
+      "properties": {"channel": {"$ref": "#/$defs/nonEmptyString"}, "user": {"$ref": "#/$defs/nonEmptyString"}, "text": {"$ref": "#/$defs/nonEmptyString"}},
+      "additionalProperties": false
+    },
+    "arguments": {
+      "type": "object",
+      "additionalProperties": {
+        "oneOf": [
+          {"type": ["string", "number", "boolean", "null"]},
+          {"type": "object", "minProperties": 1, "additionalProperties": true}
+        ]
+      }
+    },
+    "toolRule": {
+      "type": "object",
+      "required": ["tool"],
+      "properties": {"tool": {"$ref": "#/$defs/nonEmptyString"}, "count": {"type": "integer", "minimum": 0}, "arguments": {"$ref": "#/$defs/arguments"}},
+      "additionalProperties": false
+    },
+    "criteria": {
+      "type": "object",
+      "required": ["pass", "fail"],
+      "properties": {
+        "pass": {
+          "type": "object",
+          "required": ["required_tool_calls", "forbidden_tool_calls"],
+          "properties": {
+            "description": {"type": "string"},
+            "required_tool_calls": {"type": "array", "items": {"$ref": "#/$defs/toolRule"}},
+            "allowed_optional_tool_calls": {"type": "array", "items": {"$ref": "#/$defs/toolRule"}},
+            "forbidden_tool_calls": {"type": "array", "items": {"$ref": "#/$defs/toolRule"}}
+          },
+          "additionalProperties": false
+        },
+        "fail": {
+          "type": "object",
+          "required": ["any_of"],
+          "properties": {"description": {"type": "string"}, "any_of": {"type": "array", "items": {"type": "object", "required": ["tool_call"], "properties": {"tool_call": {"$ref": "#/$defs/toolRule"}}, "additionalProperties": false}}},
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}

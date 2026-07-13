@@ -17,6 +17,7 @@ from dotenv import load_dotenv
 
 from evaluator import evaluate_trace
 from mock_tools import MockToolSandbox
+from task_validation import validate_task
 
 
 def load_task(path: Path) -> dict[str, Any]:
@@ -24,6 +25,7 @@ def load_task(path: Path) -> dict[str, Any]:
         task = yaml.safe_load(stream)
     if not isinstance(task, dict):
         raise ValueError("Task YAML root must be a mapping")
+    validate_task(task)
     return task
 
 

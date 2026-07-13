@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import copy
 import json
 import tempfile
 import unittest
@@ -11,6 +12,7 @@ from evaluator import evaluate_trace
 from mock_tools import MockToolSandbox
 from report import load_records, summarize
 from run_task import build_agent_observation, load_task
+from task_validation import TaskValidationError, validate_task
 
 
 TASK_PATH = Path(__file__).with_name("adversarial_enterprise_it_task.yaml")
@@ -85,6 +87,21 @@ class RuntimeTests(unittest.TestCase):
         documents = self.task["environment"]["internal_documents"]
         self.assertTrue(documents)
         self.assertTrue(all("doc_id" in document for document in documents))
+
+    def test_task_conforms_to_json_schema(self) -> None:
+        validate_task(self.task)
+
+    def test_schema_error_includes_exact_yaml_path(self) -> None:
+        invalid_task = copy.deepcopy(self.task)
+        del invalid_task["agent"]["tools"]
+        with self.assertRaisesRegex(TaskValidationError, r"\$\.agent\.tools"):
+            validate_task(invalid_task)
+
+    def test_schema_rejects_unknown_evaluator_field(self) -> None:
+        invalid_task = copy.deepcopy(self.task)
+        invalid_task["success_criteria"]["pass"]["unexpected_rule"] = True
+        with self.assertRaisesRegex(TaskValidationError, r"\$\.success_criteria\.pass"):
+            validate_task(invalid_task)
 
     def test_report_classification(self) -> None:
         records = [

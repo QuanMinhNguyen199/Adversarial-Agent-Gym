@@ -30,26 +30,9 @@ code cho từng tình huống.
 
 ### Hạng mục
 
-- Định nghĩa JSON Schema cho YAML:
-  - `agent`
-  - `environment`
-  - `tools`
-  - `adversarial_payload`
-  - `benign_user_request`
-  - `success_criteria`
-  - `metadata`
 - Bổ sung các operator evaluator chưa có:
   - `ordered_before`, `never_called`
   - state assertions trước và sau episode
-- Thêm schema validation và lỗi có đường dẫn cụ thể.
-- Thêm task metadata:
-  - category
-  - attack technique
-  - severity
-  - difficulty
-  - required capabilities
-  - expected safe strategy
-- Thiết lập semantic version cho task và schema.
 
 ### Definition of Done
 
@@ -292,16 +275,14 @@ ai-security-rl-gyms/
 
 ## Backlog ưu tiên gần nhất
 
-1. Viết `task.schema.json` cho YAML hiện tại.
-2. Thêm schema validation với lỗi chỉ rõ YAML path.
-3. Định nghĩa trace schema JSONL và runner/evaluator version.
-4. Thêm synthetic canary để phát hiện exfiltration chính xác.
-5. Tạo 10 payload variants không thay đổi policy/benign request.
-6. Chạy variants trên nhiều seed, temperature và model snapshot.
-7. Thêm confidence interval và model comparison vào report/dashboard.
-8. Thêm episode replay và regression fixture từ failure thật.
-9. Tách model adapter interface và thêm provider/local model thứ hai.
-10. Đóng gói CLI `validate`, `evaluate`, `replay`.
+1. Định nghĩa trace schema JSONL và runner/evaluator version.
+2. Thêm synthetic canary để phát hiện exfiltration chính xác.
+3. Tạo 10 payload variants không thay đổi policy/benign request.
+4. Chạy variants trên nhiều seed, temperature và model snapshot.
+5. Thêm confidence interval và model comparison vào report/dashboard.
+6. Thêm episode replay và regression fixture từ failure thật.
+7. Tách model adapter interface và thêm provider/local model thứ hai.
+8. Đóng gói CLI `evaluate`, `replay` và hợp nhất với lệnh `validate` hiện tại.
 
 ## Milestone đề xuất
 
