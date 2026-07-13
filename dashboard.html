@@ -1,0 +1,267 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>AI Security RL Gym Dashboard</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #0b0f14;
+      --panel: #121820;
+      --panel-2: #18212c;
+      --border: #273342;
+      --text: #e6edf3;
+      --muted: #8b9bad;
+      --green: #38d996;
+      --red: #ff6b70;
+      --amber: #f6c85f;
+      --blue: #6aa9ff;
+      --radius: 14px;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: radial-gradient(circle at top left, #132031 0, var(--bg) 34rem);
+      color: var(--text);
+      font: 14px/1.5 Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, sans-serif;
+    }
+    button, input, select { font: inherit; }
+    .shell { max-width: 1440px; margin: 0 auto; padding: 28px; }
+    header { display: flex; justify-content: space-between; align-items: start; gap: 24px; margin-bottom: 24px; }
+    h1 { margin: 0; font-size: clamp(24px, 3vw, 38px); letter-spacing: -.035em; }
+    h2 { margin: 0; font-size: 18px; }
+    .subtitle, .muted { color: var(--muted); }
+    .subtitle { margin-top: 8px; }
+    .upload {
+      border: 1px dashed #47617d;
+      border-radius: var(--radius);
+      background: rgba(18, 24, 32, .82);
+      padding: 14px 16px;
+      min-width: 300px;
+      cursor: pointer;
+      transition: .15s ease;
+    }
+    .upload:hover, .upload.drag { border-color: var(--blue); background: #162233; }
+    .upload input { display: none; }
+    .upload strong { display: block; }
+    .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin-bottom: 18px; }
+    .card, .panel { background: rgba(18, 24, 32, .94); border: 1px solid var(--border); border-radius: var(--radius); }
+    .card { padding: 18px; min-height: 118px; }
+    .card .label { color: var(--muted); text-transform: uppercase; letter-spacing: .08em; font-size: 11px; font-weight: 700; }
+    .card .value { font-size: 32px; font-weight: 760; margin-top: 8px; letter-spacing: -.03em; }
+    .card .note { color: var(--muted); margin-top: 2px; }
+    .green { color: var(--green); } .red { color: var(--red); } .amber { color: var(--amber); }
+    .toolbar { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; padding: 14px; margin-bottom: 14px; }
+    .toolbar input, .toolbar select {
+      color: var(--text); background: var(--panel-2); border: 1px solid var(--border);
+      border-radius: 9px; padding: 9px 11px;
+    }
+    .toolbar input { flex: 1; min-width: 220px; }
+    .file-meta { margin-left: auto; color: var(--muted); }
+    .workspace { display: grid; grid-template-columns: minmax(500px, 1.35fr) minmax(360px, .85fr); gap: 14px; min-height: 520px; }
+    .panel { overflow: hidden; }
+    .panel-head { padding: 16px 18px; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; gap: 16px; }
+    .episode-list { max-height: 690px; overflow: auto; }
+    .episode {
+      display: grid; grid-template-columns: 120px 1fr 90px; gap: 14px; align-items: center;
+      padding: 14px 18px; border-bottom: 1px solid var(--border); cursor: pointer;
+    }
+    .episode:hover, .episode.active { background: var(--panel-2); }
+    .badge { display: inline-flex; align-items: center; width: fit-content; border-radius: 999px; padding: 4px 9px; font-size: 11px; font-weight: 800; letter-spacing: .04em; }
+    .badge.pass { color: var(--green); background: rgba(56,217,150,.12); }
+    .badge.compromised { color: var(--red); background: rgba(255,107,112,.12); }
+    .badge.refusal { color: var(--amber); background: rgba(246,200,95,.12); }
+    .episode-id { font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: 12px; }
+    .episode-tools { color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .duration { text-align: right; color: var(--muted); }
+    .details { padding: 18px; max-height: 690px; overflow: auto; }
+    .empty { min-height: 420px; display: grid; place-items: center; text-align: center; color: var(--muted); padding: 32px; }
+    .detail-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin: 16px 0; }
+    .detail-item { background: var(--panel-2); padding: 11px; border-radius: 9px; }
+    .detail-item small { display: block; color: var(--muted); margin-bottom: 3px; }
+    .section { margin-top: 20px; }
+    .section h3 { font-size: 12px; color: var(--muted); letter-spacing: .08em; text-transform: uppercase; margin: 0 0 9px; }
+    pre {
+      margin: 0; padding: 12px; border: 1px solid var(--border); border-radius: 9px;
+      background: #0c1117; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12px;
+    }
+    .tool-call { border-left: 3px solid var(--blue); margin-bottom: 10px; }
+    .tool-name { color: var(--blue); font-weight: 750; margin-bottom: 7px; }
+    .reason { color: var(--red); background: rgba(255,107,112,.08); border: 1px solid rgba(255,107,112,.22); padding: 9px; border-radius: 8px; margin-bottom: 8px; }
+    .bar { height: 8px; background: #0b1016; border-radius: 99px; overflow: hidden; margin-top: 10px; }
+    .bar > span { display: block; height: 100%; border-radius: inherit; }
+    @media (max-width: 900px) {
+      header { flex-direction: column; }
+      .upload { width: 100%; }
+      .stats { grid-template-columns: 1fr 1fr; }
+      .workspace { grid-template-columns: 1fr; }
+    }
+    @media (max-width: 560px) {
+      .shell { padding: 16px; }
+      .stats { grid-template-columns: 1fr; }
+      .episode { grid-template-columns: 105px 1fr; }
+      .duration { display: none; }
+    }
+  </style>
+</head>
+<body>
+  <main class="shell">
+    <header>
+      <div>
+        <h1>AI Security RL Gym</h1>
+        <div class="subtitle">Adversarial agent evaluation dashboard</div>
+      </div>
+      <label class="upload" id="dropZone">
+        <input id="fileInput" type="file" accept=".jsonl,.json,text/plain">
+        <strong>Open a JSONL trace</strong>
+        <span class="muted">Click or drag a run file here. Data stays in your browser.</span>
+      </label>
+    </header>
+
+    <section class="stats">
+      <article class="card"><div class="label">Episodes</div><div class="value" id="episodes">—</div><div class="note" id="model">No run loaded</div></article>
+      <article class="card"><div class="label">Secure completion</div><div class="value green" id="stcr">—</div><div class="bar"><span id="stcrBar" style="background:var(--green);width:0"></span></div></article>
+      <article class="card"><div class="label">Attack success</div><div class="value red" id="asr">—</div><div class="bar"><span id="asrBar" style="background:var(--red);width:0"></span></div></article>
+      <article class="card"><div class="label">Over-refusal</div><div class="value amber" id="orr">—</div><div class="bar"><span id="orrBar" style="background:var(--amber);width:0"></span></div></article>
+    </section>
+
+    <section class="panel toolbar">
+      <input id="search" placeholder="Search episode ID, tool, recipient, or response…">
+      <select id="filter">
+        <option value="all">All outcomes</option>
+        <option value="pass">Secure completion</option>
+        <option value="compromised">Compromised</option>
+        <option value="refusal">Over-refusal</option>
+      </select>
+      <span class="file-meta" id="fileMeta">Select a JSONL run to begin</span>
+    </section>
+
+    <section class="workspace">
+      <div class="panel">
+        <div class="panel-head"><h2>Episodes</h2><span class="muted" id="visibleCount">0 shown</span></div>
+        <div class="episode-list" id="episodeList"><div class="empty">No episodes loaded.</div></div>
+      </div>
+      <aside class="panel">
+        <div class="panel-head"><h2>Trace inspector</h2><span class="muted">Deterministic evidence</span></div>
+        <div id="details" class="empty">Select an episode to inspect tool calls, evaluation reasons, and the final response.</div>
+      </aside>
+    </section>
+  </main>
+
+  <script>
+    let records = [];
+    let selectedId = null;
+    const $ = id => document.getElementById(id);
+    const escapeHtml = value => String(value ?? "").replace(/[&<>'"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]));
+    const pct = (value, total) => total ? (100 * value / total).toFixed(1) + '%' : '0.0%';
+
+    function outcome(record) {
+      const e = record.evaluation || {};
+      if (e.security_passed === false) return 'compromised';
+      if (e.security_passed === true && e.utility_passed === false) return 'refusal';
+      return e.passed ? 'pass' : 'refusal';
+    }
+
+    function labelFor(value) {
+      return {pass:'SECURE', compromised:'COMPROMISED', refusal:'OVER-REFUSAL'}[value];
+    }
+
+    function updateStats() {
+      const total = records.length;
+      const counts = {pass:0, compromised:0, refusal:0};
+      records.forEach(r => counts[outcome(r)]++);
+      $('episodes').textContent = total || '—';
+      $('stcr').textContent = total ? pct(counts.pass, total) : '—';
+      $('asr').textContent = total ? pct(counts.compromised, total) : '—';
+      $('orr').textContent = total ? pct(counts.refusal, total) : '—';
+      $('stcrBar').style.width = pct(counts.pass, total);
+      $('asrBar').style.width = pct(counts.compromised, total);
+      $('orrBar').style.width = pct(counts.refusal, total);
+      const models = [...new Set(records.map(r => r.model).filter(Boolean))];
+      $('model').textContent = models.join(', ') || 'No run loaded';
+    }
+
+    function searchable(record) {
+      return JSON.stringify({id: record.episode_id, tools: record.tool_calls, response: record.final_response}).toLowerCase();
+    }
+
+    function renderList() {
+      const query = $('search').value.trim().toLowerCase();
+      const filter = $('filter').value;
+      const visible = records.filter(r => (filter === 'all' || outcome(r) === filter) && (!query || searchable(r).includes(query)));
+      $('visibleCount').textContent = `${visible.length} shown`;
+      if (!visible.length) {
+        $('episodeList').innerHTML = '<div class="empty">No episodes match the current filter.</div>';
+        return;
+      }
+      $('episodeList').innerHTML = visible.map(r => {
+        const status = outcome(r);
+        const tools = (r.tool_calls || []).map(t => t.tool).join(' → ') || 'No tool calls';
+        return `<div class="episode ${r.episode_id === selectedId ? 'active' : ''}" data-id="${escapeHtml(r.episode_id)}">
+          <div><span class="badge ${status}">${labelFor(status)}</span></div>
+          <div><div class="episode-id">${escapeHtml((r.episode_id || '').slice(0, 13))}…</div><div class="episode-tools">${escapeHtml(tools)}</div></div>
+          <div class="duration">${Number(r.duration_ms || 0).toLocaleString()} ms</div>
+        </div>`;
+      }).join('');
+      document.querySelectorAll('.episode').forEach(el => el.addEventListener('click', () => selectEpisode(el.dataset.id)));
+    }
+
+    function selectEpisode(id) {
+      selectedId = id;
+      const r = records.find(item => item.episode_id === id);
+      renderList();
+      if (!r) return;
+      const status = outcome(r);
+      const reasons = r.evaluation?.failure_reasons || [];
+      const calls = r.tool_calls || [];
+      $('details').className = 'details';
+      $('details').innerHTML = `
+        <span class="badge ${status}">${labelFor(status)}</span>
+        <div class="detail-grid">
+          <div class="detail-item"><small>Episode</small><span class="episode-id">${escapeHtml(r.episode_id)}</span></div>
+          <div class="detail-item"><small>Model</small>${escapeHtml(r.model)}</div>
+          <div class="detail-item"><small>Duration</small>${Number(r.duration_ms || 0).toLocaleString()} ms</div>
+          <div class="detail-item"><small>Termination</small>${escapeHtml(r.termination)}</div>
+          <div class="detail-item"><small>Security</small>${r.evaluation?.security_passed ? 'Passed' : 'Failed'}</div>
+          <div class="detail-item"><small>Utility</small>${r.evaluation?.utility_passed ? 'Passed' : 'Failed'}</div>
+        </div>
+        <div class="section"><h3>Evaluation reasons</h3>${reasons.length ? reasons.map(x => `<div class="reason">${escapeHtml(x)}</div>`).join('') : '<div class="muted">No failure reasons.</div>'}</div>
+        <div class="section"><h3>Tool-call timeline (${calls.length})</h3>${calls.length ? calls.map((c, i) => `<div class="detail-item tool-call"><div class="tool-name">${i + 1}. ${escapeHtml(c.tool)}</div><pre>${escapeHtml(JSON.stringify(c.arguments || {}, null, 2))}</pre></div>`).join('') : '<div class="muted">No tools were called.</div>'}</div>
+        <div class="section"><h3>Final response</h3><pre>${escapeHtml(r.final_response || '(empty)')}</pre></div>
+        <div class="section"><h3>Task fingerprint</h3><pre>${escapeHtml(r.task_sha256 || '(not recorded)')}</pre></div>`;
+    }
+
+    function loadText(text, filename) {
+      const parsed = [];
+      const errors = [];
+      text.split(/\r?\n/).forEach((line, index) => {
+        if (!line.trim()) return;
+        try { parsed.push(JSON.parse(line)); }
+        catch (error) { errors.push(`line ${index + 1}: ${error.message}`); }
+      });
+      if (errors.length) { alert(`Could not parse JSONL:\n${errors.slice(0, 5).join('\n')}`); return; }
+      records = parsed;
+      selectedId = records[0]?.episode_id || null;
+      $('fileMeta').textContent = `${filename} · ${records.length} episodes`;
+      updateStats(); renderList();
+      if (selectedId) selectEpisode(selectedId);
+    }
+
+    function openFile(file) {
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = () => loadText(reader.result, file.name);
+      reader.readAsText(file);
+    }
+
+    $('fileInput').addEventListener('change', event => openFile(event.target.files[0]));
+    $('search').addEventListener('input', renderList);
+    $('filter').addEventListener('change', renderList);
+    const drop = $('dropZone');
+    ['dragenter','dragover'].forEach(name => drop.addEventListener(name, event => { event.preventDefault(); drop.classList.add('drag'); }));
+    ['dragleave','drop'].forEach(name => drop.addEventListener(name, event => { event.preventDefault(); drop.classList.remove('drag'); }));
+    drop.addEventListener('drop', event => openFile(event.dataTransfer.files[0]));
+  </script>
+</body>
+</html>
