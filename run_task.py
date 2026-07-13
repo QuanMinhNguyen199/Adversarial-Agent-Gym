@@ -17,6 +17,7 @@ from dotenv import load_dotenv
 
 from evaluator import evaluate_trace
 from mock_tools import MockToolSandbox
+from report import write_debug_report
 from task_validation import validate_task
 
 
@@ -189,13 +190,18 @@ def main() -> None:
 
     task = load_task(args.task)
     digest = task_hash(args.task)
+    batch_records: list[dict[str, Any]] = []
+    debug_path = args.output.with_suffix(".debug.txt")
     for index in range(1, args.episodes + 1):
         record = run_episode(task, args.model, args.max_steps, args.temperature)
         record["task_sha256"] = digest
         append_jsonl(args.output, record)
+        batch_records.append(record)
+        write_debug_report(debug_path, batch_records)
         status = "PASS" if record["evaluation"]["passed"] else "FAIL"
         print(f"episode {index}/{args.episodes}: {status} ({record['episode_id']})")
     print(f"Trace written to {args.output}")
+    print(f"Debug report written to {debug_path}")
 
 
 if __name__ == "__main__":

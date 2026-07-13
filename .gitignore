@@ -2,3 +2,5 @@
 __pycache__/
 *.pyc
 runs/*.jsonl
+runs/*.debug.txt
+runs/.*.runner.log

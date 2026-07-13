@@ -65,6 +65,7 @@ def start_runner(task_name: str, model: str, episodes: int, output_name: str) ->
     st.session_state.runner_process = process
     st.session_state.runner_log_handle = log_handle
     st.session_state.runner_log_path = log_path
+    st.session_state.runner_debug_path = output_path.with_suffix(".debug.txt")
     st.session_state.watch_file = output_name
 
 
@@ -344,6 +345,9 @@ def live_dashboard() -> None:
         st.info(f"⏳ {status_text}")
     elif status == "completed":
         st.success(f"✅ {status_text}")
+        debug_path = st.session_state.get("runner_debug_path")
+        if debug_path and Path(debug_path).exists():
+            st.caption(f"Debug report để mở trong VS Code: `{Path(debug_path).relative_to(ROOT_DIR)}`")
     elif status == "failed":
         st.error(f"❌ {status_text}")
         log_path = st.session_state.get("runner_log_path")

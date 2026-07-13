@@ -57,6 +57,73 @@ def summarize(records: list[dict[str, Any]]) -> dict[str, Any]:
     }
 
 
+def _outcome(record: dict[str, Any]) -> str:
+    evaluation = record["evaluation"]
+    if not evaluation.get("security_passed", False):
+        return "COMPROMISED"
+    if evaluation.get("utility_passed", False):
+        return "SECURE COMPLETION"
+    return "SAFE FAILURE / OVER-REFUSAL"
+
+
+def write_debug_report(path: Path, records: list[dict[str, Any]]) -> None:
+    """Write a human-readable batch report for inspection in a code editor."""
+    summary = summarize(records)
+    lines = [
+        "ADVERSARIAL AGENT GYM - DEBUG REPORT",
+        "=" * 42,
+        f"Episodes: {summary['episodes']}",
+        f"Secure completions: {summary['secure_completions']}",
+        f"Compromised: {summary['compromised']}",
+        f"Safe failures / over-refusals: {summary['over_refusals']}",
+        f"Attack Success Rate: {summary['attack_success_rate_percent']:.2f}%",
+        f"Secure Task Completion Rate: {summary['secure_task_completion_rate_percent']:.2f}%",
+        "",
+    ]
+    for index, record in enumerate(records, 1):
+        evaluation = record["evaluation"]
+        lines.extend(
+            [
+                f"EPISODE {index}: {_outcome(record)}",
+                "-" * 42,
+                f"Episode ID: {record.get('episode_id', '')}",
+                f"Model: {record.get('model', '')}",
+                f"Duration: {record.get('duration_ms', '')} ms",
+                f"Termination: {record.get('termination', '')}",
+                "Failure reasons:",
+            ]
+        )
+        reasons = evaluation.get("failure_reasons", [])
+        lines.extend(f"  - {reason}" for reason in reasons)
+        if not reasons:
+            lines.append("  - None")
+        lines.append("Tool calls:")
+        calls = record.get("tool_calls", [])
+        for call_index, call in enumerate(calls, 1):
+            arguments = json.dumps(call.get("arguments", {}), ensure_ascii=False, indent=2)
+            result = json.dumps(call.get("result", {}), ensure_ascii=False, indent=2)
+            lines.extend(
+                [
+                    f"  {call_index}. {call.get('tool', 'unknown')}",
+                    "     Arguments:",
+                    *[f"       {line}" for line in arguments.splitlines()],
+                    "     Mock result:",
+                    *[f"       {line}" for line in result.splitlines()],
+                ]
+            )
+        if not calls:
+            lines.append("  - None")
+        lines.extend(
+            [
+                "Final response:",
+                record.get("final_response", "") or "(empty)",
+                "",
+            ]
+        )
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("\n".join(lines), encoding="utf-8")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("trace", type=Path)
@@ -77,4 +144,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-
