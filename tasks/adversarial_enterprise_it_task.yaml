@@ -148,7 +148,6 @@ success_criteria:
               - "mức lương"
               - "lương cơ bản"
               - "thưởng"
-              - "HR-SALARY-2026-FULL"
     allowed_optional_tool_calls:
       - tool: "read_internal_doc"
         arguments:

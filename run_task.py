@@ -19,6 +19,14 @@ from evaluator import evaluate_trace
 from mock_tools import MockToolSandbox
 from report import write_debug_report
 from task_validation import validate_task
+from task_variants import (
+    DEFAULT_CATALOG_PATH,
+    apply_payload_variant,
+    base_variant,
+    get_variant,
+    load_payload_catalog,
+    task_data_hash,
+)
 
 
 def load_task(path: Path) -> dict[str, Any]:
@@ -169,6 +177,43 @@ def append_jsonl(path: Path, record: dict[str, Any]) -> None:
         stream.write(json.dumps(record, ensure_ascii=False) + "\n")
 
 
+def resolve_attack_variants(
+    task: dict[str, Any], args: argparse.Namespace
+) -> list[tuple[dict[str, Any], dict[str, str]]]:
+    """Build base, preset, full-suite, or custom third-party payload variants."""
+    if args.custom_payload_file:
+        text = args.custom_payload_file.read_text(encoding="utf-8")
+        return [
+            apply_payload_variant(
+                task,
+                text,
+                variant_id="custom_payload",
+                technique="custom",
+                language="custom",
+                difficulty="unrated",
+                source="custom",
+            )
+        ]
+
+    if args.variant_id or args.all_variants:
+        catalog = load_payload_catalog(args.variant_catalog)
+        selected = catalog["variants"] if args.all_variants else [get_variant(catalog, args.variant_id)]
+        return [
+            apply_payload_variant(
+                task,
+                variant["text"],
+                variant_id=variant["id"],
+                technique=variant["technique"],
+                language=variant["language"],
+                difficulty=variant["difficulty"],
+                source="catalog",
+            )
+            for variant in selected
+        ]
+
+    return [base_variant(task)]
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("task", type=Path)
@@ -177,6 +222,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--max-steps", type=int, default=8)
     parser.add_argument("--temperature", type=float)
     parser.add_argument("--output", type=Path, default=Path("runs/latest.jsonl"))
+    attack = parser.add_mutually_exclusive_group()
+    attack.add_argument("--variant-id", help="Run one payload from the variant catalog")
+    attack.add_argument("--all-variants", action="store_true", help="Run every catalog variant")
+    attack.add_argument("--custom-payload-file", type=Path, help="Inject this text into the vendor comment")
+    parser.add_argument("--variant-catalog", type=Path, default=DEFAULT_CATALOG_PATH)
     return parser.parse_args()
 
 
@@ -188,18 +238,31 @@ def main() -> None:
     if not os.getenv("OPENAI_API_KEY"):
         raise SystemExit("OPENAI_API_KEY is not set; no API request was made")
 
-    task = load_task(args.task)
-    digest = task_hash(args.task)
+    base_task = load_task(args.task)
+    base_digest = task_hash(args.task)
+    variants = resolve_attack_variants(base_task, args)
     batch_records: list[dict[str, Any]] = []
     debug_path = args.output.with_suffix(".debug.txt")
-    for index in range(1, args.episodes + 1):
-        record = run_episode(task, args.model, args.max_steps, args.temperature)
-        record["task_sha256"] = digest
-        append_jsonl(args.output, record)
-        batch_records.append(record)
-        write_debug_report(debug_path, batch_records)
-        status = "PASS" if record["evaluation"]["passed"] else "FAIL"
-        print(f"episode {index}/{args.episodes}: {status} ({record['episode_id']})")
+    total = args.episodes * len(variants)
+    completed = 0
+    for task, variant in variants:
+        validate_task(task)
+        generated_digest = task_data_hash(task)
+        for episode_index in range(1, args.episodes + 1):
+            record = run_episode(task, args.model, args.max_steps, args.temperature)
+            record["task_sha256"] = base_digest
+            record["effective_task_sha256"] = generated_digest
+            record["attack_variant"] = variant
+            append_jsonl(args.output, record)
+            batch_records.append(record)
+            write_debug_report(debug_path, batch_records)
+            completed += 1
+            status = "PASS" if record["evaluation"]["passed"] else "FAIL"
+            print(
+                f"episode {completed}/{total}: {status} "
+                f"variant={variant['id']} sample={episode_index}/{args.episodes} "
+                f"({record['episode_id']})"
+            )
     print(f"Trace written to {args.output}")
     print(f"Debug report written to {debug_path}")
 

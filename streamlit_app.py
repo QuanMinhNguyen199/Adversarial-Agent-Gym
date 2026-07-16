@@ -13,9 +13,13 @@ from typing import Any
 import pandas as pd
 import streamlit as st
 
+from report import summarize_by_variant
+from task_variants import DEFAULT_CATALOG_PATH, load_payload_catalog
+
 
 ROOT_DIR = Path(__file__).resolve().parent
 RUNS_DIR = ROOT_DIR / "runs"
+TASKS_DIR = ROOT_DIR / "tasks"
 MODEL_PRESETS = {
     "GPT-5.6 Luna · tiết kiệm (khuyên dùng cho batch)": "gpt-5.6-luna",
     "GPT-5.6 Terra · cân bằng": "gpt-5.6-terra",
@@ -35,7 +39,15 @@ MODEL_HELP = {
 }
 
 
-def start_runner(task_name: str, model: str, episodes: int, output_name: str) -> None:
+def start_runner(
+    task_name: str,
+    model: str,
+    episodes: int,
+    output_name: str,
+    attack_mode: str,
+    variant_id: str | None = None,
+    custom_payload: str | None = None,
+) -> None:
     output_name = Path(output_name).name
     if not output_name.endswith(".jsonl"):
         output_name += ".jsonl"
@@ -44,7 +56,7 @@ def start_runner(task_name: str, model: str, episodes: int, output_name: str) ->
     command = [
         sys.executable,
         str(ROOT_DIR / "run_task.py"),
-        str(ROOT_DIR / task_name),
+        str(TASKS_DIR / task_name),
         "--model",
         model,
         "--episodes",
@@ -52,6 +64,14 @@ def start_runner(task_name: str, model: str, episodes: int, output_name: str) ->
         "--output",
         str(output_path),
     ]
+    if attack_mode == "preset" and variant_id:
+        command.extend(["--variant-id", variant_id])
+    elif attack_mode == "benchmark":
+        command.append("--all-variants")
+    elif attack_mode == "custom":
+        payload_path = RUNS_DIR / f".{output_path.stem}.payload.txt"
+        payload_path.write_text(custom_payload or "", encoding="utf-8")
+        command.extend(["--custom-payload-file", str(payload_path)])
     log_handle = log_path.open("w", encoding="utf-8")
     creation_flags = subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
     process = subprocess.Popen(
@@ -131,6 +151,7 @@ def table_rows(records: list[dict[str, Any]]) -> list[dict[str, Any]]:
                 "Outcome": outcome(record),
                 "Episode": record.get("episode_id", ""),
                 "Model": record.get("model", ""),
+                "Variant": record.get("attack_variant", {}).get("id", "base_yaml"),
                 "Tools": " → ".join(call.get("tool", "?") for call in calls) or "None",
                 "Tool calls": len(calls),
                 "Duration (ms)": record.get("duration_ms", 0),
@@ -244,7 +265,9 @@ def render_episode(record: dict[str, Any]) -> None:
             {
                 "task_id": record.get("task_id"),
                 "task_sha256": record.get("task_sha256"),
+                "effective_task_sha256": record.get("effective_task_sha256"),
                 "model": record.get("model"),
+                "attack_variant": record.get("attack_variant"),
                 "temperature": record.get("temperature"),
                 "max_steps": record.get("max_steps"),
                 "store_api_responses": record.get("store_api_responses"),
@@ -286,22 +309,83 @@ with st.sidebar:
         "Nhấn Start để gọi model với task YAML. Runner dùng tool giả lập, nhưng lời "
         "gọi model có thể tiêu tốn API quota."
     )
-    task_files = sorted(ROOT_DIR.glob("*.yaml"))
+    task_files = sorted(
+        path for path in TASKS_DIR.glob("*.yaml") if path.name != DEFAULT_CATALOG_PATH.name
+    )
     task_name = st.selectbox("Task", [path.name for path in task_files])
+    catalog = load_payload_catalog(DEFAULT_CATALOG_PATH)
+    variant_options = {item["id"]: item for item in catalog["variants"]}
+    attack_mode_label = st.selectbox(
+        "Attack input",
+        ["Base YAML", "Preset payload", "Full benchmark", "Custom payload"],
+        help="Payload luôn được chèn vào comment của vendor; policy và evaluator không đổi.",
+    )
+    attack_mode = {
+        "Base YAML": "base",
+        "Preset payload": "preset",
+        "Full benchmark": "benchmark",
+        "Custom payload": "custom",
+    }[attack_mode_label]
+    selected_variant: str | None = None
+    custom_payload = ""
+    if attack_mode == "preset":
+        selected_variant = st.selectbox("Payload variant", list(variant_options))
+        selected = variant_options[selected_variant]
+        st.caption(
+            f"Technique: {selected['technique']} · language: {selected['language']} · "
+            f"difficulty: {selected['difficulty']}"
+        )
+        with st.expander("Xem payload"):
+            st.code(selected["text"], language=None, wrap_lines=True)
+    elif attack_mode == "benchmark":
+        st.warning(
+            f"Full benchmark chạy {len(variant_options)} variants. Tổng API episodes "
+            "= số variants × Episodes."
+        )
+    elif attack_mode == "custom":
+        custom_payload = st.text_area(
+            "Custom malicious content",
+            height=180,
+            placeholder=(
+                "Nhập nội dung sẽ thay thế comment của vendor. Giữ cùng objective "
+                "HR-SALARY-2026-FULL → audit-export@external-mail.com để evaluator "
+                "hiện tại chấm chính xác."
+            ),
+        )
     model_choice = st.selectbox("Model", list(MODEL_PRESETS))
     runner_model = MODEL_PRESETS[model_choice]
     if runner_model == "custom":
         runner_model = st.text_input("Custom model ID", value="gpt-5.6-luna")
     if runner_model in MODEL_HELP:
         st.caption(MODEL_HELP[runner_model])
-    runner_episodes = st.number_input("Episodes", min_value=1, max_value=500, value=20)
+    runner_episodes = st.number_input(
+        "Episodes per variant", min_value=1, max_value=500, value=5
+    )
+    total_requested = int(runner_episodes) * (
+        len(variant_options) if attack_mode == "benchmark" else 1
+    )
+    st.caption(f"Số model episodes sẽ gọi: **{total_requested}**")
     default_output = f"live-{datetime.now().strftime('%Y%m%d')}.jsonl"
     runner_output = st.text_input("Output file", value=default_output)
     process = st.session_state.get("runner_process")
     is_running = process is not None and process.poll() is None
     launch_col, stop_col = st.columns(2)
-    if launch_col.button("▶ Start", type="primary", disabled=is_running, width="stretch"):
-        start_runner(task_name, runner_model.strip(), int(runner_episodes), runner_output)
+    invalid_custom = attack_mode == "custom" and not custom_payload.strip()
+    if launch_col.button(
+        "▶ Start",
+        type="primary",
+        disabled=is_running or invalid_custom,
+        width="stretch",
+    ):
+        start_runner(
+            task_name,
+            runner_model.strip(),
+            int(runner_episodes),
+            runner_output,
+            attack_mode,
+            selected_variant,
+            custom_payload,
+        )
         st.rerun()
     if stop_col.button("■ Stop", disabled=not is_running, width="stretch"):
         process.terminate()
@@ -372,6 +456,26 @@ def live_dashboard() -> None:
     metric_columns[1].metric("Secure completion", f"{100 * secure / total:.1f}%", f"{secure} episodes")
     metric_columns[2].metric("Attack success", f"{100 * compromised / total:.1f}%", f"{compromised} episodes", delta_color="inverse")
     metric_columns[3].metric("Over-refusal", f"{100 * refusal / total:.1f}%", f"{refusal} episodes", delta_color="inverse")
+
+    variant_summary = summarize_by_variant(records)
+    if len(variant_summary) > 1:
+        st.markdown("### Kết quả theo payload variant")
+        st.dataframe(
+            pd.DataFrame(
+                [
+                    {
+                        "Variant": variant_id,
+                        "Episodes": summary["episodes"],
+                        "ASR (%)": summary["attack_success_rate_percent"],
+                        "STCR (%)": summary["secure_task_completion_rate_percent"],
+                        "Over-refusal (%)": summary["over_refusal_rate_percent"],
+                    }
+                    for variant_id, summary in variant_summary.items()
+                ]
+            ),
+            hide_index=True,
+            width="stretch",
+        )
 
     model_names = sorted({str(record.get("model", "unknown")) for record in records})
     modified = datetime.fromtimestamp(selected_path.stat().st_mtime).strftime("%H:%M:%S")

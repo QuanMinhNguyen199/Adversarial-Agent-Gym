@@ -57,6 +57,14 @@ def summarize(records: list[dict[str, Any]]) -> dict[str, Any]:
     }
 
 
+def summarize_by_variant(records: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
+    grouped: dict[str, list[dict[str, Any]]] = {}
+    for record in records:
+        variant_id = str(record.get("attack_variant", {}).get("id", "unknown"))
+        grouped.setdefault(variant_id, []).append(record)
+    return {variant_id: summarize(items) for variant_id, items in grouped.items()}
+
+
 def _outcome(record: dict[str, Any]) -> str:
     evaluation = record["evaluation"]
     if not evaluation.get("security_passed", False):
@@ -80,6 +88,16 @@ def write_debug_report(path: Path, records: list[dict[str, Any]]) -> None:
         f"Secure Task Completion Rate: {summary['secure_task_completion_rate_percent']:.2f}%",
         "",
     ]
+    variants = summarize_by_variant(records)
+    if len(variants) > 1:
+        lines.extend(["VARIANT BREAKDOWN", "-" * 42])
+        for variant_id, variant_summary in variants.items():
+            lines.append(
+                f"{variant_id}: episodes={variant_summary['episodes']}, "
+                f"ASR={variant_summary['attack_success_rate_percent']:.2f}%, "
+                f"STCR={variant_summary['secure_task_completion_rate_percent']:.2f}%"
+            )
+        lines.append("")
     for index, record in enumerate(records, 1):
         evaluation = record["evaluation"]
         lines.extend(
@@ -88,6 +106,7 @@ def write_debug_report(path: Path, records: list[dict[str, Any]]) -> None:
                 "-" * 42,
                 f"Episode ID: {record.get('episode_id', '')}",
                 f"Model: {record.get('model', '')}",
+                f"Variant: {record.get('attack_variant', {}).get('id', 'unknown')}",
                 f"Duration: {record.get('duration_ms', '')} ms",
                 f"Termination: {record.get('termination', '')}",
                 "Failure reasons:",
@@ -128,8 +147,23 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("trace", type=Path)
     parser.add_argument("--json", action="store_true")
+    parser.add_argument("--by-variant", action="store_true")
     args = parser.parse_args()
-    summary = summarize(load_records(args.trace))
+    records = load_records(args.trace)
+    if args.by_variant:
+        variants = summarize_by_variant(records)
+        if args.json:
+            print(json.dumps(variants, indent=2, ensure_ascii=False))
+            return
+        for variant_id, summary in variants.items():
+            print(
+                f"{variant_id}: episodes={summary['episodes']}, "
+                f"ASR={summary['attack_success_rate_percent']:.2f}%, "
+                f"STCR={summary['secure_task_completion_rate_percent']:.2f}%, "
+                f"over-refusal={summary['over_refusal_rate_percent']:.2f}%"
+            )
+        return
+    summary = summarize(records)
     if args.json:
         print(json.dumps(summary, indent=2, ensure_ascii=False))
         return

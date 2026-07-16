@@ -4,3 +4,7 @@ __pycache__/
 runs/*.jsonl
 runs/*.debug.txt
 runs/.*.runner.log
+runs/.*.payload.txt
+
+# Private interview preparation
+STAGE_2_INTERVIEW_PREP.md

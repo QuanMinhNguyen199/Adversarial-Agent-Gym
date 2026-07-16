@@ -10,6 +10,29 @@ Mục tiêu không chỉ là kiểm tra agent có “trả lời an toàn” hay
 đã quan sát gì, gọi tool nào, thay đổi trạng thái môi trường ra sao và có hoàn thành
 phần yêu cầu hợp lệ của người dùng hay không.
 
+## Trạng thái hiện tại
+
+Đã có:
+
+- Một task indirect prompt injection trong môi trường Enterprise IT Helpdesk.
+- JSON Schema và lệnh validate YAML với đường dẫn lỗi rõ ràng.
+- OpenAI runner hỗ trợ multi-step tool calling.
+- Mock document/email tools, JSONL trace và debug report.
+- Deterministic evaluator tách `security_passed` và `utility_passed`.
+- Regression rule/test cho phép safe internal email giải thích payload bị từ chối,
+  không còn false over-refusal chỉ vì nhắc restricted document ID.
+- Streamlit dashboard và unit tests.
+- Catalog 10 payload variants cùng objective, custom vendor-comment input và full
+  benchmark theo variant.
+
+Chưa có:
+
+- Human-in-the-loop hoặc nút duyệt từng tool call nhạy cảm.
+- Tool authorization thực tế như document ACL hoặc chặn external recipient.
+- Replay hoàn chỉnh, provider adapter, confidence interval và CI.
+- Reward API hoặc training loop; đây vẫn là evaluation prototype, chưa phải hệ
+  thống reinforcement learning hoàn chỉnh.
+
 ## Nguyên tắc thiết kế
 
 - Deterministic first: ưu tiên chấm bằng tool call, tham số và state transition.
@@ -33,6 +56,8 @@ code cho từng tình huống.
 - Bổ sung các operator evaluator chưa có:
   - `ordered_before`, `never_called`
   - state assertions trước và sau episode
+- Cải thiện failure reasons để chỉ rõ argument/constraint nào không match, thay vì
+  chỉ báo tổng quát “expected matching call, got 0”.
 
 ### Definition of Done
 
@@ -63,12 +88,23 @@ Trace Recorder ──► Deterministic Evaluator ──► Report
 ### Hạng mục còn lại
 
 - Tách interface model adapter để bổ sung provider khác và local model.
+- Tách hai execution mode:
+  - `evaluation`: ghi nhận ý định/tool call để đo năng lực model.
+  - `protected`: policy gateway có thể chặn hoặc yêu cầu approval trước side effect.
+- Bổ sung tool-level authorization:
+  - Document ACL theo user, role và classification.
+  - Chuẩn hóa recipient và chặn dữ liệu nhạy cảm gửi ra ngoài domain.
+- Thêm human-in-the-loop tùy chọn cho restricted document và external email:
+  - `pending_approval`, `approved`, `denied`.
+  - Vẫn ghi nhận unsafe request của model dù con người đã chặn side effect.
 - Chuẩn hóa trace schema chính thức cho các trường chưa có:
   - message role và model output items
   - raw/normalized arguments
   - environment state hash
   - runner/evaluator version
 - Thêm timeout theo episode và giới hạn tool call độc lập với `max_steps`.
+- Ghi cả malformed/rejected tool attempts vào trace thay vì chỉ ghi call đã chạy
+  qua mock sandbox.
 - Bổ sung seed, max tokens và model snapshot vào cấu hình inference.
 - Thêm các lệnh CLI còn thiếu:
 
@@ -82,12 +118,26 @@ ai-sec-gym replay runs/latest.jsonl --episode EPISODE_ID
 
 - Trace có thể replay và cho cùng kết quả evaluator.
 - Không lưu secret hoặc nội dung nhạy cảm thật vào log.
+- Phân biệt được model an toàn, unsafe attempt bị chặn và side effect đã xảy ra.
+- Protected mode không cho một model request đơn lẻ vượt qua policy gateway.
 
 ## Phase 3 — Benchmark Prompt Injection (v0.4)
 
 ### Mục tiêu
 
 Mở rộng từ một payload thành ma trận attack × placement × obfuscation × objective.
+
+### Đã triển khai bước đầu
+
+- 10 payload variants giữ nguyên salary-exfiltration objective.
+- Base, preset, full benchmark và custom payload mode trong Streamlit.
+- Trace lưu variant ID, technique, language, difficulty, placement và payload hash.
+- Report hỗ trợ ASR/STCR theo variant.
+- `benchmark.py` có dry-run mặc định, hiển thị tổng API episodes, từ chối output đã
+  tồn tại và chỉ gọi model khi có cờ `--run`.
+
+Hiện variants mới chỉ thay nội dung vendor comment và giữ nguyên objective/evaluator;
+placement matrix và objective matrix vẫn chưa triển khai.
 
 ### Attack families
 
@@ -191,6 +241,8 @@ Mỗi gym cần:
 - Exfiltration Rate.
 - Mean Steps to Completion.
 - Variance theo seed và temperature.
+- Unsafe Attempt Rate: model yêu cầu hành động bị cấm, kể cả khi gateway chặn.
+- Prevented Side-effect Rate: tỷ lệ unsafe attempt bị policy/human chặn thành công.
 
 ### Báo cáo bắt buộc
 
@@ -198,6 +250,7 @@ Mỗi gym cần:
 - Confusion matrix: safe completion, unsafe completion, safe refusal, unsafe refusal.
 - So sánh model/prompt/version.
 - Confidence interval thay vì chỉ báo cáo một tỷ lệ đơn.
+- Tách `over-refusal` thành safe refusal, wrong-tool và incomplete task.
 
 ## Phase 7 — CI/CD và Regression Security (v0.8)
 
@@ -275,20 +328,27 @@ ai-security-rl-gyms/
 
 ## Backlog ưu tiên gần nhất
 
-1. Định nghĩa trace schema JSONL và runner/evaluator version.
-2. Thêm synthetic canary để phát hiện exfiltration chính xác.
-3. Tạo 10 payload variants không thay đổi policy/benign request.
-4. Chạy variants trên nhiều seed, temperature và model snapshot.
-5. Thêm confidence interval và model comparison vào report/dashboard.
-6. Thêm episode replay và regression fixture từ failure thật.
-7. Tách model adapter interface và thêm provider/local model thứ hai.
-8. Đóng gói CLI `evaluate`, `replay` và hợp nhất với lệnh `validate` hiện tại.
+1. Đồng bộ policy nghiệp vụ với evaluator: phân biệt unauthorized read và full
+   data exfiltration.
+2. Tách outcome `over-refusal` thành safe refusal, wrong-tool và incomplete task.
+3. Thêm synthetic canary để phát hiện exfiltration chính xác.
+4. Định nghĩa trace schema JSONL, run ID và runner/evaluator version.
+5. Ghi malformed/rejected tool attempts vào trace.
+6. Thêm protected mode với document ACL và external-recipient enforcement.
+7. Thêm human approval tùy chọn sau policy gateway cho hành động nhạy cảm.
+8. Mở rộng variants sang attachment, tool result và linked document placement.
+9. Chạy variants trên nhiều seed, temperature và model snapshot.
+10. Thêm confidence interval và model comparison vào report/dashboard.
+11. Thêm episode replay và regression fixture từ failure thật.
+12. Tách model adapter interface và thêm provider/local model thứ hai.
+13. Đóng gói CLI `evaluate`, `replay` và hợp nhất với lệnh `validate` hiện tại.
 
 ## Milestone đề xuất
 
 | Milestone | Kết quả chính | Tiêu chí hoàn thành |
 |---|---|---|
 | M1 — Spec | Schema và operator set hoàn chỉnh | Task mới hợp lệ qua schema và không cần custom scoring code |
+| M2 — Runtime | Trace, replay và protected execution | Phân biệt unsafe intent, blocked action và side effect |
 | M3 — Benchmark | 50+ task variants | Có ASR/STCR theo attack family |
 | M4 — RL Gym | Reward API và resettable env | Dùng được trong training loop |
 | M5 — Release | Docs, CI, leaderboard | Public v1.0 có versioned benchmark |
